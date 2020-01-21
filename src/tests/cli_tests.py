@@ -1502,7 +1502,7 @@ class Encryption(unittest.TestCase):
         KEYPASS = ['key1pass', 'key2pass']
         # Generate multiple keys
         for uid, pswd in zip(USERIDS_1, KEYPASS):
-            rnp_genkey_rsa(uid, 1024, pswd)
+            rnp_genkey_rsa(uid.encode(CONSOLE_ENCODING), 1024, pswd)
         # Encrypt to all recipients
         src = data_path('test_messages') + '/message.txt'
         dst, dec = reg_workfiles('cleartext', '.rnp', '.dec')
