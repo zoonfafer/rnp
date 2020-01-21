@@ -31,6 +31,31 @@ TESTS_SUCCEEDED = []
 TESTS_FAILED = []
 TEST_WORKFILES = []
 
+CONSOLE_ENCODING = 'utf-8'
+UNICODE_LATIN_CAPITAL_A_GRAVE = unichr(192)
+UNICODE_LATIN_SMALL_A_GRAVE = unichr(224)
+UNICODE_LATIN_CAPITAL_A_MACRON = unichr(256)
+UNICODE_LATIN_SMALL_A_MACRON = unichr(257)
+UNICODE_GREEK_CAPITAL_HETA = unichr(880)
+UNICODE_GREEK_SMALL_HETA = unichr(881)
+UNICODE_GREEK_CAPITAL_OMEGA = unichr(937)
+UNICODE_GREEK_SMALL_OMEGA = unichr(969)
+UNICODE_CYRILLIC_CAPITAL_A = unichr(0x0410)
+UNICODE_CYRILLIC_SMALL_A = unichr(0x0430)
+UNICODE_CYRILLIC_CAPITAL_YA = unichr(0x042F)
+UNICODE_CYRILLIC_SMALL_YA = unichr(0x044F)
+UNICODE_SEQUENCE_1 = UNICODE_LATIN_CAPITAL_A_GRAVE + UNICODE_LATIN_SMALL_A_MACRON \
+    + UNICODE_GREEK_CAPITAL_HETA + UNICODE_GREEK_SMALL_OMEGA \
+    + UNICODE_CYRILLIC_CAPITAL_A + UNICODE_CYRILLIC_SMALL_YA
+UNICODE_SEQUENCE_2 = UNICODE_LATIN_SMALL_A_GRAVE + UNICODE_LATIN_CAPITAL_A_MACRON \
+    + UNICODE_GREEK_SMALL_HETA + UNICODE_GREEK_CAPITAL_OMEGA \
+    + UNICODE_CYRILLIC_SMALL_A + UNICODE_CYRILLIC_CAPITAL_YA
+WEIRD_USERID_UNICODE_1 = u'tracker_' + unichr(160) + unichr(161) \
+    + UNICODE_SEQUENCE_1 + unichr(40960) + u'@rnp'
+WEIRD_USERID_UNICODE_2 = u'tracker_' + unichr(160) + unichr(161) \
+    + UNICODE_SEQUENCE_2 + unichr(40960) + u'@rnp'
+WEIRD_USERID_SPECIAL_CHARS = '}{][)^*.+(\t\n|$@rnp'
+WEIRD_USERID_TOO_LONG = 'x' * 125 + '@rnp' # totaling 129 (MAX_USER_ID + 1)
 
 # Key userids
 KEY_ENCRYPT = 'encryption@rnp'
@@ -116,6 +141,25 @@ def check_packets(fname, regexp):
             logging.debug('Wrong packets:')
             logging.debug(output)
         return result
+
+def escape_regex(str):
+    return ''.join((c, "[\\x{:02X}]".format(ord(c)))[0 <= ord(c) <= 0x20 \
+        or c in ['[',']','(',')','|','$','.','*','^','$','\\','+','?','{','}']] for c in str)
+
+def test_userid_genkey(kbx_userid_tracker, tryGPG=True):
+    clear_keyrings()
+    # Run key generation
+    rnp_genkey_rsa(kbx_userid_tracker.encode(CONSOLE_ENCODING), 1024)
+    if tryGPG:
+        # Read with GPG
+        ret, out, err = run_proc(GPG, ['--homedir', path_for_gpg(RNPDIR), '--list-keys'])
+        if ret != 0: raise_err('gpg : failed to read keystore', err)
+        if kbx_userid_tracker not in out.decode(CONSOLE_ENCODING): raise_err('gpg : failed to read expected key from keystore')
+    # Read with rnpkeys
+    ret, out, err = run_proc(RNPK, ['--homedir', RNPDIR, '--list-keys'])
+    if ret != 0: raise_err('gpg : failed to read keystore', err)
+    if kbx_userid_tracker not in out.decode(CONSOLE_ENCODING): raise_err('gpg : failed to read expected key from keystore')
+    clear_keyrings()
 
 
 def clear_keyrings():
@@ -204,7 +248,7 @@ def rnp_encrypt_file_ex(src, dst, recipients=None, passwords=None, aead=None, ci
     if recipients != None:
         params[2:2] = ['--encrypt']
         for userid in reversed(recipients):
-            params[2:2] = ['-r', userid]
+            params[2:2] = ['-r', escape_regex(userid)]
     # Passwords to encrypt to. None or [] disables password encryption.
     if passwords:
         if recipients == None:
@@ -963,6 +1007,23 @@ class Keystore(unittest.TestCase):
         if not match:
             raise_err('wrong encrypted secret key listing', err)
 
+    def test_userid_unicode_genkeys(self):
+        test_userid_genkey(WEIRD_USERID_UNICODE_1)
+
+    def test_userid_special_chars_genkeys(self):
+        test_userid_genkey(WEIRD_USERID_SPECIAL_CHARS, False)
+
+    def test_userid_too_long_genkeys(self):
+        clear_keyrings()
+        userid = WEIRD_USERID_TOO_LONG
+        # Open pipe for password
+        pipe = pswd_pipe(PASSWORD)
+        # Run key generation
+        ret, out, err = run_proc(RNPK, ['--gen-key', '--userid', userid,
+                                '--homedir', RNPDIR, '--pass-fd', str(pipe)])
+        os.close(pipe)
+        if ret == 0: raise_err('should have failed on too long id', err)
+
 class Misc(unittest.TestCase):
 
     @classmethod
@@ -1430,6 +1491,30 @@ class Encryption(unittest.TestCase):
                 remove_files(dec)
 
             remove_files(dst, dec)
+
+    def test_encryption_weird_userids(self):
+        USERIDS_1 = [WEIRD_USERID_SPECIAL_CHARS, WEIRD_USERID_UNICODE_1]
+        USERIDS_2 = [WEIRD_USERID_SPECIAL_CHARS, WEIRD_USERID_UNICODE_1]
+        # The idea is to generate keys with USERIDS_1 and encrypt with USERIDS_2
+        # (that differ only in case)
+        # But currently Unicode case-insensitive search is not working,
+        # so we're encrypting with exactly the same recipient
+        KEYPASS = ['key1pass', 'key2pass']
+        # Generate multiple keys
+        for uid, pswd in zip(USERIDS_1, KEYPASS):
+            rnp_genkey_rsa(uid, 1024, pswd)
+        # Encrypt to all recipients
+        src = data_path('test_messages') + '/message.txt'
+        dst, dec = reg_workfiles('cleartext', '.rnp', '.dec')
+        rnp_encrypt_file_ex(src, dst, USERIDS_2, None, None)
+        # Decrypt file with each of the passwords
+        for pswd in KEYPASS:
+            rnp_decrypt_file(dst, dec, pswd)
+            compare_files(src, dec, 'rnp decrypted data differs')
+            remove_files(dec)
+        # Cleanup
+        remove_files(dst, dec)
+        clear_workfiles()
 
 
 class Compression(unittest.TestCase):
