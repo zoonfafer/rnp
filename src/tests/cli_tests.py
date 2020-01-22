@@ -148,18 +148,28 @@ def escape_regex(str):
 
 def test_userid_genkey(kbx_userid_tracker, tryGPG=True):
     clear_keyrings()
+    msgs = []
+    log = None
     # Run key generation
     rnp_genkey_rsa(kbx_userid_tracker.encode(CONSOLE_ENCODING), 1024)
     if tryGPG:
         # Read with GPG
         ret, out, err = run_proc(GPG, ['--homedir', path_for_gpg(RNPDIR), '--list-keys'])
-        if ret != 0: raise_err('gpg : failed to read keystore', err)
-        if kbx_userid_tracker not in out.decode(CONSOLE_ENCODING): raise_err('gpg : failed to read expected key from keystore')
+        if ret != 0:
+            msgs.append('gpg : failed to read keystore')
+            log = err
+        elif kbx_userid_tracker not in out.decode(CONSOLE_ENCODING):
+            msgs.append('gpg : failed to read expected key from keystore')
     # Read with rnpkeys
     ret, out, err = run_proc(RNPK, ['--homedir', RNPDIR, '--list-keys'])
-    if ret != 0: raise_err('gpg : failed to read keystore', err)
-    if kbx_userid_tracker not in out.decode(CONSOLE_ENCODING): raise_err('gpg : failed to read expected key from keystore')
+    if ret != 0:
+        msgs.append('rnpkeys : failed to read keystore')
+        log = err
+    elif kbx_userid_tracker not in out.decode(CONSOLE_ENCODING):
+        msgs.append('rnpkeys : failed to read expected key from keystore')
     clear_keyrings()
+    if msgs:
+        raise_err('\n'.join(msgs), log)
 
 
 def clear_keyrings():
