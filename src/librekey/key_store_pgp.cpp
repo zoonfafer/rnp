@@ -99,7 +99,7 @@ create_key_from_pkt(pgp_key_t *key, pgp_key_pkt_t *pkt)
     }
 
     /* this call transfers ownership */
-    if (!pgp_key_from_pkt(key, &keypkt, (pgp_content_enum) pkt->tag)) {
+    if (!pgp_key_from_pkt(key, &keypkt, (pgp_pkt_type_t) pkt->tag)) {
         RNP_LOG("failed to setup key fields");
         free_key_pkt(&keypkt);
         return false;
@@ -251,7 +251,7 @@ rnp_key_add_transferable_userid(pgp_key_t *key, pgp_transferable_userid_t *uid)
         RNP_LOG("Failed to add userid");
         return false;
     }
-    if (uid->uid.tag == PGP_PTAG_CT_USER_ID) {
+    if (uid->uid.tag == PGP_PKT_USER_ID) {
         userid->str = (char *) calloc(1, uid->uid.uid_len + 1);
         if (!userid->str) {
             RNP_LOG("uid alloc failed");

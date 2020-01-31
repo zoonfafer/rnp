@@ -219,7 +219,7 @@ pgp_rawpacket_free(pgp_rawpacket_t *packet)
 }
 
 bool
-pgp_key_from_pkt(pgp_key_t *key, const pgp_key_pkt_t *pkt, const pgp_content_enum tag)
+pgp_key_from_pkt(pgp_key_t *key, const pgp_key_pkt_t *pkt, const pgp_pkt_type_t tag)
 {
     assert(!key->pkt.version);
     assert(is_key_pkt(tag));
@@ -924,7 +924,7 @@ pgp_key_get_subsig(const pgp_key_t *key, size_t idx)
 }
 
 pgp_rawpacket_t *
-pgp_key_add_rawpacket(pgp_key_t *key, void *data, size_t len, pgp_content_enum tag)
+pgp_key_add_rawpacket(pgp_key_t *key, void *data, size_t len, pgp_pkt_type_t tag)
 {
     pgp_rawpacket_t *packet;
     if (!(packet = (pgp_rawpacket_t *) list_append(&key->packets, NULL, sizeof(*packet)))) {
@@ -943,7 +943,7 @@ pgp_key_add_rawpacket(pgp_key_t *key, void *data, size_t len, pgp_content_enum t
 }
 
 pgp_rawpacket_t *
-pgp_key_add_stream_rawpacket(pgp_key_t *key, pgp_content_enum tag, pgp_dest_t *memdst)
+pgp_key_add_stream_rawpacket(pgp_key_t *key, pgp_pkt_type_t tag, pgp_dest_t *memdst)
 {
     pgp_rawpacket_t *res =
       pgp_key_add_rawpacket(key, mem_dest_get_memory(memdst), memdst->writeb, tag);
@@ -966,7 +966,7 @@ pgp_key_add_key_rawpacket(pgp_key_t *key, pgp_key_pkt_t *pkt)
         dst_close(&dst, true);
         return NULL;
     }
-    return pgp_key_add_stream_rawpacket(key, (pgp_content_enum) pkt->tag, &dst);
+    return pgp_key_add_stream_rawpacket(key, (pgp_pkt_type_t) pkt->tag, &dst);
 }
 
 pgp_rawpacket_t *
@@ -981,7 +981,7 @@ pgp_key_add_sig_rawpacket(pgp_key_t *key, const pgp_signature_t *pkt)
         dst_close(&dst, true);
         return NULL;
     }
-    return pgp_key_add_stream_rawpacket(key, PGP_PTAG_CT_SIGNATURE, &dst);
+    return pgp_key_add_stream_rawpacket(key, PGP_PKT_SIGNATURE, &dst);
 }
 
 pgp_rawpacket_t *
@@ -996,7 +996,7 @@ pgp_key_add_uid_rawpacket(pgp_key_t *key, const pgp_userid_pkt_t *pkt)
         dst_close(&dst, true);
         return NULL;
     }
-    return pgp_key_add_stream_rawpacket(key, (pgp_content_enum) pkt->tag, &dst);
+    return pgp_key_add_stream_rawpacket(key, (pgp_pkt_type_t) pkt->tag, &dst);
 }
 
 size_t
@@ -1148,13 +1148,13 @@ pgp_key_lock(pgp_key_t *key)
 }
 
 static bool
-pgp_write_seckey(pgp_dest_t *     dst,
-                 pgp_content_enum tag,
-                 pgp_key_pkt_t *  seckey,
-                 const char *     password)
+pgp_write_seckey(pgp_dest_t *   dst,
+                 pgp_pkt_type_t tag,
+                 pgp_key_pkt_t *seckey,
+                 const char *   password)
 {
-    bool res = false;
-    int  oldtag = seckey->tag;
+    bool           res = false;
+    pgp_pkt_type_t oldtag = (pgp_pkt_type_t) seckey->tag;
 
     seckey->tag = tag;
     if (encrypt_secret_key(seckey, password, NULL)) {
@@ -1169,7 +1169,7 @@ done:
 static bool
 write_key_to_rawpacket(pgp_key_pkt_t *        seckey,
                        pgp_rawpacket_t *      packet,
-                       pgp_content_enum       type,
+                       pgp_pkt_type_t         type,
                        pgp_key_store_format_t format,
                        const char *           password)
 {
@@ -1297,7 +1297,7 @@ pgp_key_protect(pgp_key_t *                  key,
     // write the protected key to packets[0]
     if (!write_key_to_rawpacket(decrypted_seckey,
                                 pgp_key_get_rawpacket(key, 0),
-                                (pgp_content_enum) pgp_key_get_type(key),
+                                (pgp_pkt_type_t) pgp_key_get_type(key),
                                 format,
                                 new_password)) {
         goto done;
@@ -1344,7 +1344,7 @@ pgp_key_unprotect(pgp_key_t *key, const pgp_password_provider_t *password_provid
     seckey->sec_protection.s2k.usage = PGP_S2KU_NONE;
     if (!write_key_to_rawpacket(seckey,
                                 pgp_key_get_rawpacket(key, 0),
-                                (pgp_content_enum) pgp_key_get_type(key),
+                                (pgp_pkt_type_t) pgp_key_get_type(key),
                                 key->format,
                                 NULL)) {
         goto done;
@@ -1414,7 +1414,7 @@ pgp_key_add_userid_certified(pgp_key_t *              key,
     }
 
     /* Fill the transferable userid */
-    uid.uid.tag = PGP_PTAG_CT_USER_ID;
+    uid.uid.tag = PGP_PKT_USER_ID;
     uid.uid.uid_len = strlen((char *) cert->userid);
     if (!(uid.uid.uid = (uint8_t *) malloc(uid.uid.uid_len))) {
         RNP_LOG("allocation failed");
@@ -1454,18 +1454,18 @@ pgp_key_write_packets(const pgp_key_t *key, pgp_dest_t *dst)
 }
 
 static bool
-packet_matches(pgp_content_enum tag, bool secret)
+packet_matches(pgp_pkt_type_t tag, bool secret)
 {
     switch (tag) {
-    case PGP_PTAG_CT_SIGNATURE:
-    case PGP_PTAG_CT_USER_ID:
-    case PGP_PTAG_CT_USER_ATTR:
+    case PGP_PKT_SIGNATURE:
+    case PGP_PKT_USER_ID:
+    case PGP_PKT_USER_ATTR:
         return true;
-    case PGP_PTAG_CT_PUBLIC_KEY:
-    case PGP_PTAG_CT_PUBLIC_SUBKEY:
+    case PGP_PKT_PUBLIC_KEY:
+    case PGP_PKT_PUBLIC_SUBKEY:
         return !secret;
-    case PGP_PTAG_CT_SECRET_KEY:
-    case PGP_PTAG_CT_SECRET_SUBKEY:
+    case PGP_PKT_SECRET_KEY:
+    case PGP_PKT_SECRET_SUBKEY:
         return secret;
     default:
         return false;
@@ -1481,7 +1481,7 @@ write_xfer_packets(pgp_dest_t *           dst,
     for (size_t i = 0; i < pgp_key_get_rawpacket_count(key); i++) {
         pgp_rawpacket_t *pkt = pgp_key_get_rawpacket(key, i);
 
-        if (!packet_matches(pkt->tag, secret)) {
+        if (!packet_matches((pgp_pkt_type_t) pkt->tag, secret)) {
             RNP_LOG("skipping packet with tag: %d", pkt->tag);
             continue;
         }

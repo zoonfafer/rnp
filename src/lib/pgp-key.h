@@ -89,7 +89,7 @@ struct pgp_key_t *pgp_key_new(void);
  *  This sets up basic properties of the key like keyid/fpr/grip, type, etc.
  *  It does not set primary_grip or subkey_grips (the key store does this).
  */
-bool pgp_key_from_pkt(pgp_key_t *key, const pgp_key_pkt_t *pkt, const pgp_content_enum tag);
+bool pgp_key_from_pkt(pgp_key_t *key, const pgp_key_pkt_t *pkt, const pgp_pkt_type_t tag);
 
 /** free the internal data of a key *and* the key structure itself
  *
@@ -271,7 +271,7 @@ pgp_subsig_t *pgp_key_get_subsig(const pgp_key_t *, size_t);
 
 void pgp_subsig_free(pgp_subsig_t *subsig);
 
-pgp_rawpacket_t *pgp_key_add_rawpacket(pgp_key_t *, void *, size_t, pgp_content_enum);
+pgp_rawpacket_t *pgp_key_add_rawpacket(pgp_key_t *, void *, size_t, pgp_pkt_type_t);
 
 pgp_rawpacket_t *pgp_key_add_key_rawpacket(pgp_key_t *key, pgp_key_pkt_t *pkt);
 
