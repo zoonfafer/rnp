@@ -99,7 +99,7 @@ create_key_from_pkt(pgp_key_t *key, pgp_key_pkt_t *pkt)
     }
 
     /* this call transfers ownership */
-    if (!pgp_key_from_pkt(key, &keypkt, (pgp_pkt_type_t) pkt->tag)) {
+    if (!pgp_key_from_pkt(key, &keypkt, pkt->tag)) {
         RNP_LOG("failed to setup key fields");
         free_key_pkt(&keypkt);
         return false;
